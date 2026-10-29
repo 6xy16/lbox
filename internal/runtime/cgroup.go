@@ -8,26 +8,13 @@ import (
 	"syscall"
 )
 
-// ---------------------------------------------------------------------------
-// cgroup v2 —— 容器的"资源天花板"
+// cgroup v2 资源限制。统一层级下所有控制器挂在同一目录：
 //
-// 与 v1 的最大区别：v2 是**单一层级**（unified hierarchy），
-// 所有控制器挂在同一个目录下，接口统一：
-//
-//	/sys/fs/cgroup/lbox/<容器id>/
-//	├── cgroup.procs  写入 PID 即把进程纳入限制
+//	/sys/fs/cgroup/lbox/<id>/
+//	├── cgroup.procs  写入 PID 即纳入限制
 //	├── cpu.max       "配额 周期"，如 "50000 100000" = 0.5 核
 //	├── memory.max    "256M" / "1G" / "max"
 //	└── pids.max      "64"
-//
-// ⚠️ 最容易踩的坑（v1 没有这个概念）：
-//	想在某个 cgroup 里写 cpu.max，必须先在其【父目录】的
-//	cgroup.subtree_control 里打开 cpu 控制器。
-//	没有打开就直接写，会得到 ENOENT 或 EINVAL，
-//	而报错信息完全不会提示你"是控制器没开"，非常难排查。
-//	所以 Apply() 里我们会自底向上把需要的控制器逐层打开。
-// ---------------------------------------------------------------------------
-
 const (
 	// CgroupRoot 是 cgroup v2 的统一挂载点。
 	CgroupRoot = "/sys/fs/cgroup"
@@ -144,8 +131,7 @@ func (c *Cgroup) Apply(res Resource) error {
 		return fmt.Errorf("创建 cgroup 目录 %s 失败: %w", c.Path, err)
 	}
 
-	// 2) 自顶向下逐层打开控制器。
-	//    这一步是整个 cgroup v2 最容易出错的地方，见文件头注释。
+	// 2) 自顶向下逐层打开控制器（v2 必须先在上层 subtree_control 里打开才能写）
 	if err := c.enableControllers(res.controllers()); err != nil {
 		_ = c.Remove()
 		return err
@@ -192,14 +178,7 @@ func (c *Cgroup) Apply(res Resource) error {
 }
 
 // enableControllers 在本 cgroup 的所有祖先层级上打开指定控制器。
-//
-// 为什么是祖先而不是自己？
-//
-//	cgroup v2 的规则：子 cgroup 能用哪些控制器，由父目录的
-//	cgroup.subtree_control 决定。所以要在 <id> 里写 cpu.max，
-//	必须在 lbox/ 的 subtree_control 里打开 cpu；
-//	而 lbox/ 的 cgroup.controllers 里得先有 cpu，
-//	又要求根 /sys/fs/cgroup 的 subtree_control 打开 cpu。
+// v2 规则：子 cgroup 能用哪些控制器由父目录的 subtree_control 决定，所以要逐层打开。
 func (c *Cgroup) enableControllers(ctrls []string) error {
 	if len(ctrls) == 0 {
 		return nil
@@ -226,11 +205,7 @@ func (c *Cgroup) enableControllers(ctrls []string) error {
 			continue // 该层没有这个文件就跳过（例如只读的根节点）
 		}
 
-		// 只补"还没打开"的控制器。
-		//
-		// 为什么要先读？重复写已启用的控制器在 systemd 环境下会返回 EBUSY
-		// （因为该层下已经有带进程的子 cgroup），白白产生噪音。
-		// 只写差集能避开这个坑；如果一个都不缺就完全不动文件。
+		// 只补还没打开的控制器。重复写已启用的控制器在 systemd 下会 EBUSY。
 		enabled := strings.Fields(string(data))
 		var missing []string
 		for _, c := range ctrls {
@@ -285,11 +260,8 @@ func (c *Cgroup) Remove() error {
 	return nil
 }
 
-// Diagnose 回读 cgroup 的所有关键文件并打印，用于排查"写了却没生效"。
-//
-// 为什么要这个？cgroup v2 有个很坑的现象：
-// 写入可能"成功返回"，但控制器其实没启用，于是限制根本不生效，
-// 而且不会有任何报错。只有把值读回来对照，才能知道到底发生了什么。
+// Diagnose 回读 cgroup 关键文件并打印。v2 下写入可能成功但控制器未启用、
+// 限制根本不生效且无报错，只能靠读回值对照排查。
 func (c *Cgroup) Diagnose() {
 	parent := filepath.Dir(c.Path)
 

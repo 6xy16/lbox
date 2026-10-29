@@ -16,8 +16,6 @@ import (
 // 命令结构：
 //   lbox run [选项] <命令> [参数...]   在新 namespace 中运行命令
 //   lbox init <命令> [参数...]         [内部命令] 容器内初始化，不对外使用
-//
-// 后续里程碑会加入 ps / stop / rm / exec。
 // ---------------------------------------------------------------------------
 
 const usage = `lbox —— 手写极简容器运行时（不依赖 Docker / runc）
@@ -55,7 +53,7 @@ const usage = `lbox —— 手写极简容器运行时（不依赖 Docker / runc
 
 说明:
   创建 namespace 需要 CAP_SYS_ADMIN，请用 sudo 运行。
-  M1~M2 阶段尚未启用 user namespace，到 M3 才会支持免 sudo。
+  尚未启用 user namespace，因此不能免 sudo。
 `
 
 func main() {

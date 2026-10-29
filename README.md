@@ -131,24 +131,6 @@ lbox/
 
 ---
 
-## 简历话术
-
-> **项目名称：lbox —— 极简 Linux 容器运行时**
->
-> **项目描述：** 基于 Linux namespace + cgroup v2 从零手写的迷你容器运行时，不依赖 Docker 和 runc，实现了容器隔离、资源限制、网络、端口映射等核心功能。
->
-> **技术栈：** Go、Linux Namespace、cgroup v2、pivot_root、iptables、/proc
->
-> **主要工作：**
-> - 用 clone(2) 系统调用创建 UTS/PID/MNT/NET 四种 namespace，实现进程、文件系统、网络的视图隔离
-> - 基于 cgroup v2 虚拟文件系统实现 CPU、内存、进程数的资源限制，解决了 WSL2 swap 导致内存限制"假生效"的问题
-> - 用 pivot_root 切换根文件系统，配合 busybox 构建最小 rootfs，实现容器与宿主机的文件隔离
-> - 实现 bridge + veth pair + iptables NAT 的网络方案，支持动态 IP 分配和端口映射
-> - 手写容器内 PID 1 进程，负责僵尸回收、信号转发和退出码透传
-> - 实现 lmon 监控工具，从 /proc 文件系统采样 CPU/内存/网卡数据，做实时仪表盘
-
----
-
 ## License
 
 MIT

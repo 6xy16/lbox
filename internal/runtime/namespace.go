@@ -4,38 +4,24 @@ import (
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
-// Linux clone(2) 的 namespace flag 常量
-//
-// 这些值与内核头文件 <linux/sched.h> 中的定义一一对应。
-// Go 标准库的 syscall 包虽然也导出了同名常量，但这里显式写出来有两个好处：
-//  1. 教学价值：读代码的人能直接看到"容器到底向内核申请了什么"
-//  2. 可控性：后续要做 flag 组合、打印诊断信息时更方便
-//
-// ---------------------------------------------------------------------------
+// Linux clone(2) 的 namespace flag 常量，值与内核头文件 <linux/sched.h> 一致。
 const (
-	// CLONE_NEWUTS  —— 隔离主机名和域名 (hostname / NIS domain name)
-	// 容器内执行 hostname 看到的不再是宿主机的名字
+	// CLONE_NEWUTS —— 隔离主机名和域名
 	CloneNewUTS uintptr = 0x04000000
 
-	// CLONE_NEWPID —— 隔离进程号空间
-	// 容器内第一个进程就是 PID 1，看不到也 kill 不了宿主机的任何进程
+	// CLONE_NEWPID —— 隔离进程号空间，容器内第一个进程是 PID 1
 	CloneNewPID uintptr = 0x20000000
 
-	// CLONE_NEWNS —— 隔离挂载点表（这是 "NS" 而不是 "MOUNT" 的历史命名遗留）
-	// 容器内的 mount / umount 不会影响宿主机
+	// CLONE_NEWNS —— 隔离挂载点表（"NS" 是历史命名，实际是 mount namespace）
 	CloneNewNS uintptr = 0x00020000
 
-	// CLONE_NEWNET —— 隔离网络栈（网卡、路由表、iptables、端口）
-	// 后续做 veth pair + 网桥时会用到
+	// CLONE_NEWNET —— 隔离网络栈
 	CloneNewNET uintptr = 0x40000000
 
 	// CLONE_NEWIPC —— 隔离 System V IPC 与 POSIX 消息队列
 	CloneNewIPC uintptr = 0x08000000
 
-	// CLONE_NEWUSER —— 隔离用户与组 ID
-	// 让容器内以 root(uid=0) 运行，而宿主机侧只是一个普通用户
-	// 注意：它必须先于其他 namespace 创建，否则没有 CAP_SYS_ADMIN 权限
+	// CLONE_NEWUSER —— 隔离用户与组 ID（暂未启用）
 	CloneNewUser uintptr = 0x10000000
 )
 
@@ -43,14 +29,8 @@ const (
 // 本质是上面那些常量的按位或。
 type NamespaceFlags uintptr
 
-// FlagsPhase1 是 M1 里程碑使用的组合：UTS + PID + MOUNT。
-// 这三个足以演示"隔离"最直观的效果：
-//   - hostname 独立（UTS）
-//   - ps 只能看到自己（PID + 重新挂载的 /proc）
-//   - mount 操作不外泄（MOUNT）
-//
-// 暂时不启用 NEWUSER：它需要 uid/gid 映射（M3 才做），
-// 所以 M1 阶段必须 sudo 运行以获得创建 namespace 所需的 CAP_SYS_ADMIN。
+// FlagsPhase1 是当前启用的隔离组合：UTS + PID + MOUNT + IPC。
+// 未启用 NEWUSER，因此需要 sudo 运行以获得创建 namespace 所需的 CAP_SYS_ADMIN。
 var FlagsPhase1 = NamespaceFlags(CloneNewUTS | CloneNewPID | CloneNewNS | CloneNewIPC)
 
 // Has 判断是否启用了某个 flag。

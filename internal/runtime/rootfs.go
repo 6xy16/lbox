@@ -7,23 +7,11 @@ import (
 	"syscall"
 )
 
-// SetupRootfs 在容器内完成根目录切换（pivot_root）。
+// SetupRootfs 在容器内用 pivot_root 切换根目录。
+// 不用 chroot：chroot 只改进程看到的 "/"，旧根仍可通过 /proc/<pid>/root 访问，
+// 且可被重新 chroot 回去。pivot_root 会把旧根真正换掉并 umount。
 //
-// 为什么不用 chroot？
-//
-//	chroot 只改变进程看到的 "/",但旧 root 仍然可以通过 /proc/<pid>/root
-//	或重新 chroot 回来访问,不安全。pivot_root 是把根目录真正换掉,
-//	旧 root 被挂到 put_old 目录后 umount,容器内完全看不到宿主机文件系统。
-//
-// 标准 pivot_root 流程（参考 man 2 pivot_root 和 runc 源码）：
-//  1. mount --bind rootfs 到自己（确保它是一个独立 mount point）
-//  2. chdir 到 rootfs
-//  3. 创建 put_old 目录（.old_root）
-//  4. pivot_root(".", ".old_root")
-//  5. chdir 到新根 "/"
-//  6. umount 旧根 ".old_root"
-//  7. 删除 put_old 目录
-//  8. 挂 /proc、/dev(tmpfs)、/sys
+// 流程：bind 自身 → chdir → 建 .old_root → pivot_root → chdir / → umount → 挂 /proc /dev /sys /tmp。
 func SetupRootfs(rootfsPath string) error {
 	// 先转绝对路径：Chdir 之后，原来的相对路径不能再用来定位 rootfs。
 	absRootfs, err := filepath.Abs(rootfsPath)
@@ -39,44 +27,38 @@ func SetupRootfs(rootfsPath string) error {
 		return fmt.Errorf("rootfs 不是目录: %s", rootfsPath)
 	}
 
-	// 2) mount --bind rootfs 到自己。
-	//    为什么必须 bind？pivot_root 要求 new_root 是一个 mount point。
-	//    如果 rootfs 只是一个普通目录（而不是挂载点），pivot_root 会失败。
-	//    bind mount 一下就能把它变成独立的 mount point。
+	// 2) bind 自身。pivot_root 要求 new_root 是 mount point，普通目录会失败。
 	if err := syscall.Mount(rootfsPath, rootfsPath, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return fmt.Errorf("bind mount rootfs 失败: %w", err)
 	}
 
-	// 3) cd 到 rootfs。pivot_root 要求 new_root 是当前工作目录
-	//    （或者说,内核会用 current->fs->pwd 作为 new_root）。
+	// 3) cd 到 rootfs，内核以 current->fs->pwd 作为 new_root。
 	if err := syscall.Chdir(rootfsPath); err != nil {
 		return fmt.Errorf("chdir 到 rootfs 失败: %w", err)
 	}
 
-	// 4) 当前目录已经是 rootfs，这里只能使用新根内的相对路径。
+	// 4) 已在 rootfs 内，只能用新根内的相对路径。
 	putOld := ".old_root"
 	if err := os.Mkdir(putOld, 0o700); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("创建 put_old 目录失败: %w", err)
 	}
 
-	// 5) pivot_root(".", ".old_root")
-	//    第一个参数：新根（当前目录 = rootfs）
-	//    第二个参数：旧根挂载点（.old_root）
+	// 5) pivot_root(".", ".old_root")：新根=当前目录，旧根挂到 .old_root。
 	if err := syscall.PivotRoot(".", ".old_root"); err != nil {
 		return fmt.Errorf("pivot_root 失败: %w", err)
 	}
 
-	// 6) cd 到新根 "/"。现在我们已经在新根里了。
+	// 6) 切到新根。
 	if err := syscall.Chdir("/"); err != nil {
 		return fmt.Errorf("chdir 到新根失败: %w", err)
 	}
 
-	// 7) 旧根未成功卸载时绝不能删除目录内容，否则可能沿挂载点删到宿主机文件。
+	// 7) 卸载失败时绝不删目录内容，否则可能沿挂载点删到宿主机文件。
 	if err := syscall.Unmount("/.old_root", syscall.MNT_DETACH); err != nil {
 		return fmt.Errorf("umount 旧根失败（已保留 /.old_root，未删除任何内容）: %w", err)
 	}
 
-	// 8) 卸载成功后它应当只是空目录；只删目录本身，禁止递归删除。
+	// 8) 卸载成功后它应是空目录，只删目录本身，不递归删除。
 	if err := os.Remove("/.old_root"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("删除空 put_old 目录失败: %w", err)
 	}
