@@ -1,0 +1,19 @@
+# 编译产物
+/bin/
+*.exe
+
+# WorkBuddy 项目数据（不是项目源码）
+/.workbuddy/
+
+# rootfs 是构建出来的，不入库（可用 scripts/setup-rootfs.sh 重建）
+/rootfs/
+
+# 编辑器 / 系统临时文件
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Go 相关
+*.test
+*.out
