@@ -127,8 +127,7 @@ lbox/
 │       └── ipam.go        # 动态 IP 分配
 ├── rootfs/           # busybox 最小根文件系统
 ├── docs/
-│   └── interview.md   # 面试问答清单（20 个问答）
-├── DESIGN.md          # 设计文档
+│   └── NEXT_STEPS.md  # 后续完善方向
 └── Makefile
 ```
 
@@ -149,21 +148,6 @@ lbox/
 > - 实现 bridge + veth pair + iptables NAT 的网络方案，支持动态 IP 分配和端口映射
 > - 手写容器内 PID 1 进程，负责僵尸回收、信号转发和退出码透传
 > - 实现 lmon 监控工具，从 /proc 文件系统采样 CPU/内存/网卡数据，做实时仪表盘
-
----
-
-## 面试要点
-
-详细问答见 [docs/interview.md](docs/interview.md)，共 20 个问答，覆盖：
-
-1. 项目自我介绍（30 秒电梯版 + 2 分钟详细版）
-2. Namespace 原理和 7 种类型
-3. Cgroup v2 资源限制机制
-4. pivot_root vs chroot
-5. 容器内 PID 1 的特殊职责
-6. 网络原理（veth pair / bridge / NAT）
-7. 踩坑经历（swap 假生效 / pids 限制失效）
-8. 和 Docker 的对比
 
 ---
 
