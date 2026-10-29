@@ -126,8 +126,6 @@ lbox/
 │       ├── net.go         # bridge/veth/NAT/端口映射
 │       └── ipam.go        # 动态 IP 分配
 ├── rootfs/           # busybox 最小根文件系统
-├── docs/
-│   └── NEXT_STEPS.md  # 后续完善方向
 └── Makefile
 ```
 
